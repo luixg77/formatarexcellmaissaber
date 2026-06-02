@@ -5,6 +5,7 @@ import { UploadCloud, FileSpreadsheet, Loader2, Download, AlertCircle } from 'lu
 
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
+  const [formattedFiles, setFormattedFiles] = useState<{ nome: string; conteudoBase64: string }[] | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +25,7 @@ export default function Home() {
     e.preventDefault();
     setIsDragging(false);
     setError(null);
+    setFormattedFiles(null);
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFiles = Array.from(e.dataTransfer.files).filter(
@@ -40,6 +42,7 @@ export default function Home() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
+    setFormattedFiles(null);
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files).filter(
         f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
@@ -50,6 +53,7 @@ export default function Home() {
 
   const removeFile = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
+    setFormattedFiles(null);
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -57,13 +61,16 @@ export default function Home() {
     fileInputRef.current?.click();
   };
 
-  const handleProcess = async () => {
+  const handleFormat = async () => {
     if (files.length === 0) return;
 
     setIsProcessing(true);
     setError(null);
+    setFormattedFiles(null);
 
     try {
+      const allProcessed: { nome: string; conteudoBase64: string }[] = [];
+
       for (const fileToProcess of files) {
         const formData = new FormData();
         formData.append('file', fileToProcess);
@@ -84,39 +91,48 @@ export default function Home() {
           throw new Error('Erro ao processar o arquivo. Resposta inválida do servidor.');
         }
 
-        for (const fileObj of responseData.files) {
-          // Decode Base64 string to Blob
-          const byteCharacters = atob(fileObj.conteudoBase64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileObj.nome;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
-          
-          // Maior delay entre downloads para o navegador não bloquear múltiplos arquivos da mesma planilha
-          await new Promise(r => setTimeout(r, 800));
-        }
+        allProcessed.push(...responseData.files);
       }
 
-      // Reset
-      setFiles([]);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setFormattedFiles(allProcessed);
     } catch (err: any) {
       setError(err.message || 'Erro inesperado.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!formattedFiles) return;
+
+    for (const fileObj of formattedFiles) {
+      // Decode Base64 string to Blob
+      const byteCharacters = atob(fileObj.conteudoBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileObj.nome;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      // Maior delay entre downloads para o navegador não bloquear múltiplos arquivos da mesma planilha
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    // Reset after downloading
+    setFiles([]);
+    setFormattedFiles(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -188,27 +204,37 @@ export default function Home() {
         )}
 
         <div className="mt-8">
-          <button
-            onClick={handleProcess}
-            disabled={files.length === 0 || isProcessing}
-            className={`w-full py-3 px-4 rounded-xl font-medium text-white flex items-center justify-center transition-all ${
-              files.length === 0 || isProcessing
-                ? 'bg-blue-300 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 size={20} className="animate-spin mr-2" />
-                Processando arquivo...
-              </>
-            ) : (
-              <>
-                <Download size={20} className="mr-2" />
-                Formatar e Baixar
-              </>
-            )}
-          </button>
+          {!formattedFiles ? (
+            <button
+              onClick={handleFormat}
+              disabled={files.length === 0 || isProcessing}
+              className={`w-full py-3 px-4 rounded-xl font-medium text-white flex items-center justify-center transition-all duration-200 active:scale-95 ${
+                files.length === 0 || isProcessing
+                  ? 'bg-blue-300 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg hover:-translate-y-1'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 size={20} className="animate-spin mr-2" />
+                  Processando arquivo...
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet size={20} className="mr-2" />
+                  Formatar Planilha
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={handleDownload}
+              className="w-full py-3 px-4 rounded-xl font-medium text-white flex items-center justify-center transition-all duration-200 active:scale-95 bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg hover:-translate-y-1"
+            >
+              <Download size={20} className="mr-2" />
+              Baixar {formattedFiles.length > 1 ? 'Planilhas Prontas' : 'Planilha Pronta'}
+            </button>
+          )}
         </div>
 
         <div className="mt-6 border-t pt-4">
