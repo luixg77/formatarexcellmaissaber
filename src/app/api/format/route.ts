@@ -35,6 +35,22 @@ export async function POST(req: NextRequest) {
       ano: -1,
     };
 
+    // Normalization helper
+    const normalizeString = (str: string) => {
+      return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // remove acentos
+        .replace(/\s+/g, ' ') // remove espaços extras
+        .toLowerCase()
+        .trim();
+    };
+
+    const synonymsNome = ['nome', 'aluno', 'estudante', 'candidato', 'criança', 'crianca'];
+    const synonymsEscola = ['escola', 'instituição', 'unidade', 'colegio', 'centro'];
+    const synonymsTurma = ['turma', 'classe', 'sala', 'agrupamento'];
+    const synonymsTurno = ['turno', 'periodo', 'horario'];
+    const synonymsAno = ['ano', 'serie', 'nivel', 'etapa'];
+
     for (let i = 0; i < Math.min(20, rows.length); i++) {
       const row = rows[i];
       if (!row || !Array.isArray(row)) continue;
@@ -46,15 +62,21 @@ export async function POST(req: NextRequest) {
       let foundAno = -1;
 
       for (let j = 0; j < row.length; j++) {
-        const cellValue = String(row[j] || '').toLowerCase().trim();
-        // Não confundir "Nome Completo" com "Nome da Escola"
-        if (cellValue.includes('nome') && !cellValue.includes('escola')) foundNome = j;
-        else if (cellValue === 'aluno' || cellValue === 'alunos') foundNome = j;
+        const normalizedCell = normalizeString(String(row[j] || ''));
+        if (!normalizedCell) continue;
         
-        if (cellValue.includes('escola')) foundEscola = j;
-        if (cellValue.includes('turma')) foundTurma = j;
-        if (cellValue.includes('turno')) foundTurno = j;
-        if (cellValue.includes('ano') || cellValue.includes('série') || cellValue.includes('serie')) foundAno = j;
+        // Não confundir "Nome Completo" com "Nome da Escola"
+        if (synonymsNome.some(s => normalizedCell.includes(s)) && !synonymsEscola.some(s => normalizedCell.includes(s))) {
+          foundNome = j;
+        } else if (synonymsEscola.some(s => normalizedCell.includes(s))) {
+          foundEscola = j;
+        } else if (synonymsTurma.some(s => normalizedCell.includes(s))) {
+          foundTurma = j;
+        } else if (synonymsTurno.some(s => normalizedCell.includes(s))) {
+          foundTurno = j;
+        } else if (synonymsAno.some(s => normalizedCell.includes(s))) {
+          foundAno = j;
+        }
       }
 
       if (foundNome !== -1 && (foundEscola !== -1 || foundTurma !== -1 || foundAno !== -1)) {
@@ -88,6 +110,14 @@ export async function POST(req: NextRequest) {
       const valTurma = colIndices.turma !== -1 && row[colIndices.turma] ? String(row[colIndices.turma]).trim() : '';
       const valTurno = colIndices.turno !== -1 && row[colIndices.turno] ? String(row[colIndices.turno]).trim() : '';
       let valAno = colIndices.ano !== -1 && row[colIndices.ano] ? String(row[colIndices.ano]).trim() : '';
+
+      // Fallback: Se a escola não mandou coluna "Ano", tentar extrair da "Turma" (ex: "2º Ano A" -> "2")
+      if (!valAno && valTurma) {
+         const anoMatch = valTurma.match(/\d+/);
+         if (anoMatch) {
+             valAno = anoMatch[0];
+         }
+      }
 
       // Skip if completely empty row
       if (!valNome && !valEscola && !valTurma && !valTurno && !valAno) {
