@@ -74,14 +74,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Não foi possível encontrar o cabeçalho com colunas como Nome, Turma, etc.' }, { status: 400 });
     }
 
-    // Build the new data matrix
-    const newRows: any[][] = [];
+    // Build the new data matrix grouped by school
+    const groupedRows: Record<string, any[][]> = {};
     
-    // Rule 1: First 3 rows must be blank
-    newRows.push([]);
-    newRows.push([]);
-    newRows.push([]);
-
     // Iterate through data rows in the original file
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
       const row = rows[i];
@@ -142,25 +137,48 @@ export async function POST(req: NextRequest) {
         valAno || ''
       ];
 
-      newRows.push(newRow);
+      const schoolName = valEscola || 'Sem_Escola';
+      
+      if (!groupedRows[schoolName]) {
+        // Rule 1: First 3 rows must be blank for each new school sheet
+        groupedRows[schoolName] = [[], [], []];
+      }
+      
+      groupedRows[schoolName].push(newRow);
     }
 
-    // Create the new workbook and worksheet
-    const newWb = xlsx.utils.book_new();
-    const newWs = xlsx.utils.aoa_to_sheet(newRows);
-    xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
+    const processedFiles: { nome: string; conteudoBase64: string }[] = [];
+    const originalBaseName = file.name.replace(/\.[^/.]+$/, ""); // strip extension
 
-    // Write to buffer
-    const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
+    for (const [schoolName, schoolRows] of Object.entries(groupedRows)) {
+      // Create the new workbook and worksheet
+      const newWb = xlsx.utils.book_new();
+      const newWs = xlsx.utils.aoa_to_sheet(schoolRows);
+      xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
 
-    // Return the formatted file as response
-    return new NextResponse(outBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename="Formatado.xlsx"',
-      },
-    });
+      // Write to buffer
+      const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
+      
+      // Convert to Base64
+      const base64Content = outBuffer.toString('base64');
+      
+      // Safe filename: remove invalid characters if any
+      const safeSchoolName = schoolName.replace(/[\\/:*?"<>|]/g, '-').trim();
+      
+      let finalFilename = `Formatado_${originalBaseName}.xlsx`;
+      // If there's more than one school in this sheet, append the school name to the file name
+      if (Object.keys(groupedRows).length > 1) {
+        finalFilename = `Formatado_${originalBaseName}_${safeSchoolName}.xlsx`;
+      }
+      
+      processedFiles.push({
+        nome: finalFilename,
+        conteudoBase64: base64Content
+      });
+    }
+
+    // Return JSON array of formatted files
+    return NextResponse.json({ success: true, files: processedFiles }, { status: 200 });
 
   } catch (error: any) {
     console.error('Error processing file:', error);

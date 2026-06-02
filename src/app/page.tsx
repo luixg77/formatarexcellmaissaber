@@ -78,19 +78,34 @@ export default function Home() {
           throw new Error(`Erro ao processar ${fileToProcess.name}: ${errorData.error}`);
         }
 
-        // Download the returned blob
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Formatado_${fileToProcess.name}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        const responseData = await response.json();
         
-        // Pequeno delay entre downloads para o navegador não bloquear
-        await new Promise(r => setTimeout(r, 500));
+        if (!responseData.success || !responseData.files) {
+          throw new Error('Erro ao processar o arquivo. Resposta inválida do servidor.');
+        }
+
+        for (const fileObj of responseData.files) {
+          // Decode Base64 string to Blob
+          const byteCharacters = atob(fileObj.conteudoBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileObj.nome;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          
+          // Maior delay entre downloads para o navegador não bloquear múltiplos arquivos da mesma planilha
+          await new Promise(r => setTimeout(r, 800));
+        }
       }
 
       // Reset
