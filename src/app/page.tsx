@@ -223,9 +223,9 @@ export default function Home() {
       </div>
 
       <footer className="mt-8 text-gray-400 text-sm flex items-center justify-center gap-2">
-        <span>Desenvolvido por <span className="font-semibold text-gray-500">Luiz</span></span>
+        <span>luizteste82@gmail.com</span>
         <span className="text-gray-300">|</span>
-        <span className="text-gray-400 text-xs font-mono">v1.0.2</span>
+        <span className="text-gray-400 text-xs font-mono">v1.0.3</span>
       </footer>
     </main>
   );
