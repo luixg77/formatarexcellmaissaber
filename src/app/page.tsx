@@ -105,27 +105,54 @@ export default function Home() {
   const handleDownload = async () => {
     if (!formattedFiles) return;
 
-    for (const fileObj of formattedFiles) {
-      // Decode Base64 string to Blob
-      const byteCharacters = atob(fileObj.conteudoBase64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    if (formattedFiles.length >= 7) {
+      // Create ZIP
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
 
-      const url = window.URL.createObjectURL(blob);
+      for (const fileObj of formattedFiles) {
+        const byteCharacters = atob(fileObj.conteudoBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        
+        zip.file(fileObj.nome, byteArray);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileObj.nome;
+      a.download = `planilhas_formatadas_${new Date().getTime()}.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
-      // Maior delay entre downloads para o navegador não bloquear múltiplos arquivos da mesma planilha
-      await new Promise(r => setTimeout(r, 800));
+    } else {
+      for (const fileObj of formattedFiles) {
+        // Decode Base64 string to Blob
+        const byteCharacters = atob(fileObj.conteudoBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileObj.nome;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Maior delay entre downloads para o navegador não bloquear múltiplos arquivos da mesma planilha
+        await new Promise(r => setTimeout(r, 800));
+      }
     }
 
     // Reset after downloading
