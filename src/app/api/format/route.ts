@@ -134,6 +134,31 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      const turmaUpper = valTurma.toUpperCase();
+      const anoUpper = valAno.toUpperCase();
+
+      // Ignorar Creche, Infantil e outras nomenclaturas sem ano numerado
+      if (
+        turmaUpper.includes('CRECHE') || anoUpper.includes('CRECHE') ||
+        turmaUpper.includes('INFANTIL') || anoUpper.includes('INFANTIL') ||
+        turmaUpper.includes('MATERNAL') || anoUpper.includes('MATERNAL') ||
+        turmaUpper.includes('BERÇARIO') || anoUpper.includes('BERÇARIO') ||
+        turmaUpper.includes('BERCARIO') || anoUpper.includes('BERCARIO')
+      ) {
+        continue;
+      }
+
+      // Se a turma/ano não contém nenhum dígito numérico (ex: "1", "2", "3"), ignora os alunos
+      const hasYearNumber = /\d/.test(valAno) || /\d/.test(valTurma);
+      if (!hasYearNumber) {
+        continue;
+      }
+
+      // Se a linha não tiver o nome do aluno, ignora (evita linhas semi-vazias)
+      if (!valNome) {
+        continue;
+      }
+
       // Format Ano to always include "° ANO" if needed
       if (valAno) {
         // Ensure it has the degree symbol
