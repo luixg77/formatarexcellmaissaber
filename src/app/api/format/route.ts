@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as xlsx from 'xlsx';
+import { compareTwoStrings } from 'string-similarity';
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,6 +99,24 @@ export async function POST(req: NextRequest) {
 
     // Build the new data matrix grouped by school
     const groupedRows: Record<string, any[][]> = {};
+    const knownSchools: { original: string; core: string }[] = [];
+    
+    // Função para extrair apenas o "nome núcleo" da escola, ignorando palavras genéricas
+    const getCoreSchoolName = (name: string) => {
+      let core = normalizeString(name);
+      // Remover pontuações
+      core = core.replace(/[.,-]/g, ' ');
+      // Remover termos genéricos que inflam a similaridade
+      const genericTerms = [
+        'escola', 'municipal', 'estadual', 'centro', 'educacional', 'colegio', 'instituto',
+        'creche', 'infantil', 'emef', 'cmei', 'cei', 'e m', 'e e', 'c e', 'c m', 'em', 'ee', 'ce', 'cm',
+        'de', 'da', 'do', 'das', 'dos', 'e'
+      ];
+      
+      const words = core.split(/\s+/);
+      const filteredWords = words.filter(w => !genericTerms.includes(w));
+      return filteredWords.join(' ').trim();
+    };
     
     // Iterate through data rows in the original file
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -175,6 +194,28 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      let canonicalSchoolName = 'Sem_Escola';
+      if (valEscola) {
+        const coreName = getCoreSchoolName(valEscola);
+        let bestMatch = { index: -1, score: 0 };
+        
+        for (let j = 0; j < knownSchools.length; j++) {
+          const score = compareTwoStrings(coreName, knownSchools[j].core);
+          if (score > bestMatch.score) {
+            bestMatch = { index: j, score };
+          }
+        }
+
+        if (bestMatch.score >= 0.70) {
+          // Utiliza o primeiro nome oficial encontrado que tem >= 70% de similaridade
+          canonicalSchoolName = knownSchools[bestMatch.index].original;
+        } else {
+          // É uma escola nova
+          knownSchools.push({ original: valEscola, core: coreName });
+          canonicalSchoolName = valEscola;
+        }
+      }
+      
       // Target template:
       // A: Nome
       // B: (blank)
@@ -186,20 +227,18 @@ export async function POST(req: NextRequest) {
       const newRow = [
         valNome || '',
         null, // Coluna B em branco
-        valEscola || '',
+        canonicalSchoolName, // Usamos o nome padronizado
         valTurma || '',
         valTurno || '',
         valAno || ''
       ];
 
-      const schoolName = valEscola || 'Sem_Escola';
-      
-      if (!groupedRows[schoolName]) {
+      if (!groupedRows[canonicalSchoolName]) {
         // Rule 1: First 3 rows must be blank for each new school sheet
-        groupedRows[schoolName] = [[], [], []];
+        groupedRows[canonicalSchoolName] = [[], [], []];
       }
       
-      groupedRows[schoolName].push(newRow);
+      groupedRows[canonicalSchoolName].push(newRow);
     }
 
     const processedFiles: { nome: string; conteudoBase64: string }[] = [];
