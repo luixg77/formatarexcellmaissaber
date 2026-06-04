@@ -66,16 +66,18 @@ export async function POST(req: NextRequest) {
         const normalizedCell = normalizeString(String(row[j] || ''));
         if (!normalizedCell) continue;
         
-        // Não confundir "Nome Completo" com "Nome da Escola"
-        if (synonymsNome.some(s => normalizedCell.includes(s)) && !synonymsEscola.some(s => normalizedCell.includes(s))) {
+        // Não confundir "Nome Completo" com "Nome da Escola", ou "Nome da Mãe/Pai"
+        if (synonymsNome.some(s => normalizedCell.includes(s)) && !synonymsEscola.some(s => normalizedCell.includes(s)) && !normalizedCell.includes('mae') && !normalizedCell.includes('pai') && !normalizedCell.includes('responsavel')) {
           foundNome = j;
-        } else if (synonymsEscola.some(s => normalizedCell.includes(s))) {
+        } else if (synonymsEscola.some(s => normalizedCell.includes(s)) && !normalizedCell.includes('ano escolar')) {
+          // Ignora 'ano escolar' para não sobrescrever a coluna de escola
           foundEscola = j;
         } else if (synonymsTurma.some(s => normalizedCell.includes(s))) {
           foundTurma = j;
         } else if (synonymsTurno.some(s => normalizedCell.includes(s))) {
           foundTurno = j;
-        } else if (synonymsAno.some(s => normalizedCell.includes(s))) {
+        } else if (synonymsAno.some(s => normalizedCell.includes(s)) && !normalizedCell.includes('letivo') && !normalizedCell.includes('nascimento')) {
+          // Ignora 'ano letivo' (ex: 2026) e 'data de nascimento'
           foundAno = j;
         }
       }
