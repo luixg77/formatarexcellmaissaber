@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    
+    const splitMode = data.get('splitMode') === 'true';
 
     // Read the original file
     const workbook = xlsx.read(buffer, { type: 'buffer' });
@@ -29,6 +31,48 @@ export async function POST(req: NextRequest) {
 
     if (rows.length === 0) {
       return NextResponse.json({ success: false, error: 'A planilha está vazia.' }, { status: 400 });
+    }
+
+    if (splitMode) {
+      // Modo de apenas fatiar a planilha JÁ FORMATADA
+      // Ignora as linhas iniciais vazias e foca apenas nas linhas com dados
+      const dataRows = rows.filter(r => r && Array.isArray(r) && r.some(cell => cell !== null && cell !== undefined && cell !== ''));
+      
+      const MAX_ALUNOS = 499;
+      const chunks: any[][][] = [];
+      for (let i = 0; i < dataRows.length; i += MAX_ALUNOS) {
+        chunks.push(dataRows.slice(i, i + MAX_ALUNOS));
+      }
+
+      const processedFiles: { nome: string; conteudoBase64: string }[] = [];
+      const originalBaseName = file.name.replace(/\.[^/.]+$/, ""); // strip extension
+
+      chunks.forEach((chunk, index) => {
+        // As 3 primeiras linhas em branco exigidas pelo formato
+        const finalRows: any[][] = [[], [], []];
+        for (const pr of chunk) {
+          finalRows.push(pr);
+        }
+
+        const newWb = xlsx.utils.book_new();
+        const newWs = xlsx.utils.aoa_to_sheet(finalRows);
+        xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
+
+        const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
+        const base64Content = outBuffer.toString('base64');
+        
+        let finalFilename = `Dividido_${originalBaseName}.xlsx`;
+        if (chunks.length > 1) {
+          finalFilename = `Dividido_${originalBaseName}_parte${index + 1}.xlsx`;
+        }
+        
+        processedFiles.push({
+          nome: finalFilename,
+          conteudoBase64: base64Content
+        });
+      });
+
+      return NextResponse.json({ success: true, files: processedFiles }, { status: 200 });
     }
 
     // Heuristics to find columns in the original file
@@ -210,42 +254,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Prepare final rows (Rule 1: First 3 rows must be blank)
+    const finalRows: any[][] = [[], [], []];
+    for (const pr of parsedRows) {
+      pr[2] = primarySchoolName; // Unify the school name
+      finalRows.push(pr);
+    }
+
     const processedFiles: { nome: string; conteudoBase64: string }[] = [];
     const originalBaseName = file.name.replace(/\.[^/.]+$/, ""); // strip extension
 
-    const MAX_ALUNOS = 499;
-    const chunks: any[][][] = [];
+    // Create the new workbook and worksheet with all rows
+    const newWb = xlsx.utils.book_new();
+    const newWs = xlsx.utils.aoa_to_sheet(finalRows);
+    xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
+
+    // Write to buffer
+    const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
     
-    // Divide os alunos em blocos de até 499
-    for (let i = 0; i < parsedRows.length; i += MAX_ALUNOS) {
-      chunks.push(parsedRows.slice(i, i + MAX_ALUNOS));
-    }
-
-    // Processa cada bloco separadamente
-    chunks.forEach((chunk, index) => {
-      // Rule 1: First 3 rows must be blank
-      const finalRows: any[][] = [[], [], []];
-      for (const pr of chunk) {
-        pr[2] = primarySchoolName; // Unify the school name
-        finalRows.push(pr);
-      }
-
-      const newWb = xlsx.utils.book_new();
-      const newWs = xlsx.utils.aoa_to_sheet(finalRows);
-      xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
-
-      const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
-      const base64Content = outBuffer.toString('base64');
-      
-      let finalFilename = `Formatado_${originalBaseName}.xlsx`;
-      if (chunks.length > 1) {
-        finalFilename = `Formatado_${originalBaseName}_parte${index + 1}.xlsx`;
-      }
-      
-      processedFiles.push({
-        nome: finalFilename,
-        conteudoBase64: base64Content
-      });
+    // Convert to Base64
+    const base64Content = outBuffer.toString('base64');
+    
+    const finalFilename = `Formatado_${originalBaseName}.xlsx`;
+    
+    processedFiles.push({
+      nome: finalFilename,
+      conteudoBase64: base64Content
     });
 
     // Return JSON array of formatted files

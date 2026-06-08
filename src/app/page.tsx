@@ -9,6 +9,7 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [splitMode, setSplitMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -74,6 +75,7 @@ export default function Home() {
       for (const fileToProcess of files) {
         const formData = new FormData();
         formData.append('file', fileToProcess);
+        formData.append('splitMode', String(splitMode));
 
         const response = await fetch('/api/format', {
           method: 'POST',
@@ -221,6 +223,19 @@ export default function Home() {
               <p className="text-sm text-gray-400 mt-1">ou clique para selecionar do computador</p>
             </div>
           )}
+        </div>
+
+        <div className="mt-4 flex items-center">
+          <input 
+            type="checkbox" 
+            id="splitMode" 
+            checked={splitMode} 
+            onChange={(e) => setSplitMode(e.target.checked)} 
+            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <label htmlFor="splitMode" className="ml-2 text-sm font-medium text-gray-700 cursor-pointer">
+            Apenas dividir arquivo já formatado (até 499 alunos)
+          </label>
         </div>
 
         {error && (
