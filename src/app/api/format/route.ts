@@ -104,26 +104,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Não foi possível encontrar o cabeçalho com colunas como Nome, Turma, etc.' }, { status: 400 });
     }
 
-    // Build the new data matrix grouped by school
-    const groupedRows: Record<string, any[][]> = {};
-    const knownSchools: { original: string; core: string }[] = [];
-    
-    // Função para extrair apenas o "nome núcleo" da escola, ignorando palavras genéricas
-    const getCoreSchoolName = (name: string) => {
-      let core = normalizeString(name);
-      // Remover pontuações
-      core = core.replace(/[.,-]/g, ' ');
-      // Remover termos genéricos que inflam a similaridade
-      const genericTerms = [
-        'escola', 'municipal', 'estadual', 'centro', 'educacional', 'colegio', 'instituto',
-        'creche', 'infantil', 'emef', 'cmei', 'cei', 'e m', 'e e', 'c e', 'c m', 'em', 'ee', 'ce', 'cm',
-        'de', 'da', 'do', 'das', 'dos', 'e'
-      ];
-      
-      const words = core.split(/\s+/);
-      const filteredWords = words.filter(w => !genericTerms.includes(w));
-      return filteredWords.join(' ').trim();
-    };
+    // We will collect all valid rows and tally the school names
+    const parsedRows: any[][] = [];
+    const schoolNameCounts: Record<string, number> = {};
     
     // Iterate through data rows in the original file
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -201,82 +184,59 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      let canonicalSchoolName = 'Sem_Escola';
       if (valEscola) {
-        const coreName = getCoreSchoolName(valEscola);
-        let bestMatch = { index: -1, score: 0 };
-        
-        for (let j = 0; j < knownSchools.length; j++) {
-          const score = compareTwoStrings(coreName, knownSchools[j].core);
-          if (score > bestMatch.score) {
-            bestMatch = { index: j, score };
-          }
-        }
-
-        if (bestMatch.score >= 0.70) {
-          // Utiliza o primeiro nome oficial encontrado que tem >= 70% de similaridade
-          canonicalSchoolName = knownSchools[bestMatch.index].original;
-        } else {
-          // É uma escola nova
-          knownSchools.push({ original: valEscola, core: coreName });
-          canonicalSchoolName = valEscola;
-        }
+        schoolNameCounts[valEscola] = (schoolNameCounts[valEscola] || 0) + 1;
       }
-      
-      // Target template:
-      // A: Nome
-      // B: (blank)
-      // C: Escola
-      // D: Turma
-      // E: Turno
-      // F: Ano
       
       const newRow = [
         valNome || '',
         null, // Coluna B em branco
-        canonicalSchoolName, // Usamos o nome padronizado
+        valEscola || '', // Será substituído pelo nome mais frequente depois
         valTurma || '',
         valTurno || '',
         valAno || ''
       ];
 
-      if (!groupedRows[canonicalSchoolName]) {
-        // Rule 1: First 3 rows must be blank for each new school sheet
-        groupedRows[canonicalSchoolName] = [[], [], []];
+      parsedRows.push(newRow);
+    }
+
+    // Determine the most frequent school name in the file to unify all rows
+    let primarySchoolName = 'Escola Não Identificada';
+    let maxCount = 0;
+    for (const [name, count] of Object.entries(schoolNameCounts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        primarySchoolName = name;
       }
-      
-      groupedRows[canonicalSchoolName].push(newRow);
+    }
+
+    // Prepare final rows (Rule 1: First 3 rows must be blank)
+    const finalRows: any[][] = [[], [], []];
+    for (const pr of parsedRows) {
+      pr[2] = primarySchoolName; // Unify the school name
+      finalRows.push(pr);
     }
 
     const processedFiles: { nome: string; conteudoBase64: string }[] = [];
     const originalBaseName = file.name.replace(/\.[^/.]+$/, ""); // strip extension
 
-    for (const [schoolName, schoolRows] of Object.entries(groupedRows)) {
-      // Create the new workbook and worksheet
-      const newWb = xlsx.utils.book_new();
-      const newWs = xlsx.utils.aoa_to_sheet(schoolRows);
-      xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
+    // Create the new workbook and worksheet with all rows
+    const newWb = xlsx.utils.book_new();
+    const newWs = xlsx.utils.aoa_to_sheet(finalRows);
+    xlsx.utils.book_append_sheet(newWb, newWs, 'Planilha Formatada');
 
-      // Write to buffer
-      const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
-      
-      // Convert to Base64
-      const base64Content = outBuffer.toString('base64');
-      
-      // Safe filename: remove invalid characters if any
-      const safeSchoolName = schoolName.replace(/[\\/:*?"<>|]/g, '-').trim();
-      
-      let finalFilename = `Formatado_${originalBaseName}.xlsx`;
-      // If there's more than one school in this sheet, append the school name to the file name
-      if (Object.keys(groupedRows).length > 1) {
-        finalFilename = `Formatado_${originalBaseName}_${safeSchoolName}.xlsx`;
-      }
-      
-      processedFiles.push({
-        nome: finalFilename,
-        conteudoBase64: base64Content
-      });
-    }
+    // Write to buffer
+    const outBuffer = xlsx.write(newWb, { type: 'buffer', bookType: 'xlsx' });
+    
+    // Convert to Base64
+    const base64Content = outBuffer.toString('base64');
+    
+    const finalFilename = `Formatado_${originalBaseName}.xlsx`;
+    
+    processedFiles.push({
+      nome: finalFilename,
+      conteudoBase64: base64Content
+    });
 
     // Return JSON array of formatted files
     return NextResponse.json({ success: true, files: processedFiles }, { status: 200 });
