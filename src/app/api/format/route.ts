@@ -16,11 +16,16 @@ export async function POST(req: NextRequest) {
 
     // Read the original file
     const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
 
-    // Convert to array of arrays
-    const rows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+    // Extract data from all sheets and concatenate them
+    let rows: any[][] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const sheetRows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+      if (sheetRows.length > 0) {
+        rows = rows.concat(sheetRows);
+      }
+    }
 
     if (rows.length === 0) {
       return NextResponse.json({ success: false, error: 'A planilha está vazia.' }, { status: 400 });
@@ -52,7 +57,7 @@ export async function POST(req: NextRequest) {
     const synonymsTurno = ['turno', 'periodo', 'horario'];
     const synonymsAno = ['ano', 'serie', 'nivel', 'etapa'];
 
-    for (let i = 0; i < Math.min(20, rows.length); i++) {
+    for (let i = 0; i < Math.min(50, rows.length); i++) {
       const row = rows[i];
       if (!row || !Array.isArray(row)) continue;
 
