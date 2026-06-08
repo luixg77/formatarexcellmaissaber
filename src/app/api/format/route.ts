@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         .trim();
     };
 
-    const synonymsNome = ['nome', 'aluno', 'estudante', 'candidato', 'criança', 'crianca'];
+    const synonymsNome = ['nome', 'aluno', 'estudante', 'candidato', 'criança', 'crianca', 'coluna1'];
     const synonymsEscola = ['escola', 'instituição', 'unidade', 'colegio', 'centro'];
     const synonymsTurma = ['turma', 'classe', 'sala', 'agrupamento'];
     const synonymsTurno = ['turno', 'periodo', 'horario'];
